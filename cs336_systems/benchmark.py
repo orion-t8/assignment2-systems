@@ -100,7 +100,6 @@ def main(cfg: DictConfig) -> None:
     optimizer = AdamW(model.parameters())
     mode = cfg.benchmark.mode
     assert mode in ["forward-only", "forward-and-backward", "full"]
-    cs336_basics.model.scaled_dot_product_attention = annotated_scaled_dot_product_attention
 
     for _ in range(cfg.benchmark.warmup_steps):
         optimizer.zero_grad()
@@ -127,6 +126,7 @@ def main(cfg: DictConfig) -> None:
         optimizer.zero_grad()
         torch.cuda.synchronize()
         if mode == "forward-only":
+            cs336_basics.model.scaled_dot_product_attention = annotated_scaled_dot_product_attention
             with nvtx.range("forward-only"):
                 duration = run_forward_only(model, x)
         elif mode == "forward-and-backward":
