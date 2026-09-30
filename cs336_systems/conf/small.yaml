@@ -1,4 +1,4 @@
-size: xs
+size: small
 
 training:
   batch_size: 4
