@@ -7,10 +7,12 @@ import random
 import numpy as np
 import torch
 from omegaconf import DictConfig
+from hydra.core.hydra_config import HydraConfig
 import timeit
 import pandas as pd
 from datetime import datetime
 from contextlib import nullcontext
+import os
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(cfg: DictConfig) -> None:
@@ -32,6 +34,7 @@ def main(cfg: DictConfig) -> None:
     res = []
     for t in range(cfg.benchmark.warmup_steps + cfg.benchmark.measure_steps):
         specs = {
+            "size": cfg.size,
             "d_model": cfg.model.d_model,
             "d_ff": cfg.model.d_ff,
             "num_layers": cfg.model.num_layers,
@@ -81,8 +84,9 @@ def main(cfg: DictConfig) -> None:
                 specs["elapsed_seconds"] = end-start
                 res.append(specs)
     res = pd.DataFrame(res)
-    current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    res.to_csv(f"{current_time}.csv", index=None)
+    output_dir = HydraConfig.get().runtime.output_dir
+    output_file_path = os.path.join(output_dir, f"{cfg.size}_{cfg.benchmark.mode}_warmup{cfg.benchmark.warmup_steps}.csv")
+    res.to_csv(output_file_path, index=None)
     print(res)
     
 

@@ -1,0 +1,43 @@
+size: large
+
+training:
+  batch_size: 4
+  max_tokens_processed: 327680000
+  need_eval: True
+  eval_interval: 500
+  eval_iters: 20
+  save_interval: 1000
+  max_grad_norm: 1.0
+  device: cuda
+  seed: 42
+  ckpt_path: checkpoint
+  save_ckpt: False
+  max_steps: 10000
+  val_loss_threshold: 1.8
+  debug: False
+
+model:
+  vocab_size: 10000
+  context_length: 512
+  d_model: 1280
+  d_ff: 5120
+  rope_theta: 10000
+  num_layers: 36
+  num_heads: 20
+
+optimizer:
+  weight_decay: 0.1
+  beta1: 0.9
+  beta2: 0.99
+  eps: 1e-8
+
+lr_scheduler:
+  max_learning_rate: 3e-3
+  min_learning_rate: 3e-4
+  warmup_iters: 1000
+  cosine_cycle_iters: 40000
+
+benchmark:
+  mode: forward-only
+  warmup_steps: 5
+  measure_steps: 10
