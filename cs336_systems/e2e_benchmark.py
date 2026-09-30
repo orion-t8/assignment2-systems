@@ -10,6 +10,7 @@ from omegaconf import DictConfig
 import timeit
 import pandas as pd
 from datetime import datetime
+from contextlib import nullcontext
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(cfg: DictConfig) -> None:
@@ -47,37 +48,38 @@ def main(cfg: DictConfig) -> None:
 
         logits = None
         start = timeit.default_timer()
-        if mode == "forward-only":
-            with torch.no_grad():
-                logits = model.forward(x)
-        else:
+
+        forward_context = torch.no_grad() if mode == "forward-only" else nullcontext()
+        with forward_context:
             logits = model.forward(x)
-        torch.cuda.synchronize()
-        if is_measurement and mode == "forward-only":
-            end = timeit.default_timer()
-            specs["step"] = t - cfg.benchmark.warmup_steps
-            specs["elapsed_seconds"] = end-start
-            res.append(specs)
+        if mode == "forward-only":
+            if is_measurement:
+                torch.cuda.synchronize()
+                end = timeit.default_timer()
+                specs["step"] = t - cfg.benchmark.warmup_steps
+                specs["elapsed_seconds"] = end-start
+                res.append(specs)
             continue
 
         loss = cross_entropy(logits, y)
         loss.backward()
-        torch.cuda.synchronize()
-        if is_measurement and mode == "forward-and-backward":
-            end = timeit.default_timer()
-            specs["step"] = t - cfg.benchmark.warmup_steps
-            specs["elapsed_seconds"] = end-start
-            res.append(specs)
+        if mode == "forward-and-backward":
+            if is_measurement:
+                torch.cuda.synchronize()
+                end = timeit.default_timer()
+                specs["step"] = t - cfg.benchmark.warmup_steps
+                specs["elapsed_seconds"] = end-start
+                res.append(specs)
             continue
 
         optimizer.step()
-        torch.cuda.synchronize()
-        if is_measurement and mode == "full":
-            end = timeit.default_timer()
-            specs["step"] = t - cfg.benchmark.warmup_steps
-            specs["elapsed_seconds"] = end-start
-            res.append(specs)
-            continue
+        if mode == "full":
+            if is_measurement:
+                torch.cuda.synchronize()
+                end = timeit.default_timer()
+                specs["step"] = t - cfg.benchmark.warmup_steps
+                specs["elapsed_seconds"] = end-start
+                res.append(specs)
     res = pd.DataFrame(res)
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
     res.to_csv(f"{current_time}.csv", index=None)
