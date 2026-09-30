@@ -34,7 +34,7 @@ def run_forward_and_backward(model: torch.nn.Module, x: torch.Tensor, y: torch.T
     end = timeit.default_timer()
     return end-start
 
-def run_full(model: torch.nn.Module, x: torch.Tensor, y: torch.Tensor, optimizer: torch.optim.optimizer) -> float:
+def run_full(model: torch.nn.Module, x: torch.Tensor, y: torch.Tensor, optimizer: torch.optim.Optimizer) -> float:
     start = timeit.default_timer()
     logits = model.forward(x)
     loss = cross_entropy(logits, y)
