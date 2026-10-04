@@ -1,4 +1,4 @@
-size: small
+size: medium
 
 training:
   batch_size: 4
@@ -15,16 +15,16 @@ training:
   max_steps: 10000
   val_loss_threshold: 1.8
   debug: False
-  mixed_precision_bf16: False
+  mixed_precision_bf16: True
 
 model:
   vocab_size: 10000
   context_length: 512
-  d_model: 768
-  d_ff: 3072
+  d_model: 1024
+  d_ff: 4096
   rope_theta: 10000
-  num_layers: 12
-  num_heads: 12
+  num_layers: 24
+  num_heads: 16
 
 optimizer:
   weight_decay: 0.1

@@ -16,28 +16,35 @@ import pandas as pd
 import os
 import torch.cuda.nvtx as nvtx
 import math
+import contextlib
 
-def run_forward_only(model: torch.nn.Module, x: torch.Tensor) -> float:
-    start = timeit.default_timer()
-    with torch.no_grad():
-        _ = model.forward(x)
-        torch.cuda.synchronize()
-        end = timeit.default_timer()
-        return end-start
+def run_forward_only(model: torch.nn.Module, x: torch.Tensor, is_bf16=False) -> float:
+    ctxt_mgr = torch.autocast(device_type='cuda', dtype=torch.bfloat16) if is_bf16 else contextlib.nullcontext()
+    with ctxt_mgr:
+        start = timeit.default_timer()
+        with torch.no_grad():
+            _ = model.forward(x)
+            torch.cuda.synchronize()
+            end = timeit.default_timer()
+            return end-start
 
-def run_forward_and_backward(model: torch.nn.Module, x: torch.Tensor, y: torch.Tensor) -> float:
-    start = timeit.default_timer()
-    logits = model.forward(x)
-    loss = cross_entropy(logits, y)
+def run_forward_and_backward(model: torch.nn.Module, x: torch.Tensor, y: torch.Tensor, is_bf16=False) -> float:
+    ctxt_mgr = torch.autocast(device_type='cuda', dtype=torch.bfloat16) if is_bf16 else contextlib.nullcontext()
+    with ctxt_mgr:
+        start = timeit.default_timer()
+        logits = model.forward(x)
+        loss = cross_entropy(logits, y)
     loss.backward()
     torch.cuda.synchronize()
     end = timeit.default_timer()
     return end-start
 
-def run_full(model: torch.nn.Module, x: torch.Tensor, y: torch.Tensor, optimizer: torch.optim.Optimizer) -> float:
-    start = timeit.default_timer()
-    logits = model.forward(x)
-    loss = cross_entropy(logits, y)
+def run_full(model: torch.nn.Module, x: torch.Tensor, y: torch.Tensor, optimizer: torch.optim.Optimizer, is_bf16=False) -> float:
+    ctxt_mgr = torch.autocast(device_type='cuda', dtype=torch.bfloat16) if is_bf16 else contextlib.nullcontext()
+    with ctxt_mgr:
+        start = timeit.default_timer()
+        logits = model.forward(x)
+        loss = cross_entropy(logits, y)
     loss.backward()
     optimizer.step()
     torch.cuda.synchronize()
@@ -101,14 +108,15 @@ def main(cfg: DictConfig) -> None:
     mode = cfg.benchmark.mode
     assert mode in ["forward-only", "forward-and-backward", "full"]
 
+    cs336_basics.model.scaled_dot_product_attention = annotated_scaled_dot_product_attention
     for _ in range(cfg.benchmark.warmup_steps):
         optimizer.zero_grad()
         if mode == "forward-only":
-            run_forward_only(model, x)
+            run_forward_only(model, x, cfg.training.mixed_precision_bf16)
         elif mode == "forward-and-backward":
-            run_forward_and_backward(model, x, y)
+            run_forward_and_backward(model, x, y, cfg.training.mixed_precision_bf16)
         elif mode == "full":
-            run_full(model, x, y)
+            run_full(model, x, y, optimizer, cfg.training.mixed_precision_bf16)
 
     res = []
     for t in range(cfg.benchmark.measure_steps):
@@ -120,21 +128,21 @@ def main(cfg: DictConfig) -> None:
             "num_heads": cfg.model.num_heads,
             "context_length": cfg.model.context_length,
             "batch_size": cfg.training.batch_size,
-            "mode": cfg.benchmark.mode
+            "mode": cfg.benchmark.mode,
+            "mixed_precision_bf16": cfg.training.mixed_precision_bf16
         }
         duration = 0.0
         optimizer.zero_grad()
         torch.cuda.synchronize()
         if mode == "forward-only":
-            cs336_basics.model.scaled_dot_product_attention = annotated_scaled_dot_product_attention
             with nvtx.range("forward-only"):
-                duration = run_forward_only(model, x)
+                duration = run_forward_only(model, x, cfg.training.mixed_precision_bf16)
         elif mode == "forward-and-backward":
             with nvtx.range("forward-and-backward"):
-                duration = run_forward_and_backward(model, x, y)
+                duration = run_forward_and_backward(model, x, y, cfg.training.mixed_precision_bf16)
         elif mode == "full":
             with nvtx.range("full"):
-                duration = run_full(model, x, y)
+                duration = run_full(model, x, y, optimizer, cfg.training.mixed_precision_bf16)
         specs["step"] = t
         specs["elapsed_seconds"] = duration
         res.append(specs)
