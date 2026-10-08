@@ -134,6 +134,9 @@ def main(cfg: DictConfig) -> None:
         duration = 0.0
         optimizer.zero_grad()
         torch.cuda.synchronize()
+        if cfg.benchmark.profile_memory:
+            torch.cuda.memory._record_memory_history(max_entries=1000000)
+
         if mode == "forward-only":
             with nvtx.range("forward-only"):
                 duration = run_forward_only(model, x, cfg.training.mixed_precision_bf16)
@@ -143,12 +146,19 @@ def main(cfg: DictConfig) -> None:
         elif mode == "full":
             with nvtx.range("full"):
                 duration = run_full(model, x, y, optimizer, cfg.training.mixed_precision_bf16)
+
+        if cfg.benchmark.profile_memory:
+            torch.cuda.memory._dump_snapshot("memory_snapshot.pickle")
+        
+        if cfg.benchmark.profile_memory:
+            torch.cuda.memory._record_memory_history(enabled=None)
         specs["step"] = t
         specs["elapsed_seconds"] = duration
         res.append(specs)
     res = pd.DataFrame(res)
     output_dir = HydraConfig.get().runtime.output_dir
-    output_file_path = os.path.join(output_dir, f"{cfg.size}_{cfg.benchmark.mode}_warmup{cfg.benchmark.warmup_steps}.csv")
+    output_file_path = os.path.join(output_dir,
+                                    f"{cfg.size}_{cfg.benchmark.mode}_warmup{cfg.benchmark.warmup_steps}_isbf16-{cfg.training.mixed_precision_bf16}.csv")
     res.to_csv(output_file_path, index=None)
     print(res)
     

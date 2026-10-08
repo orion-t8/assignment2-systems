@@ -42,3 +42,4 @@ benchmark:
   mode: forward-only
   warmup_steps: 5
   measure_steps: 10
+  profile_memory: False
