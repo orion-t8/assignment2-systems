@@ -26,6 +26,11 @@ class FlashAttentionPytorch(torch.autograd.Function):
                 K_j = K[:, (j*B_k):((j+1)*B_k), :]
                 V_j = V[:, (j*B_k):((j+1)*B_k), :]
                 S = einsum(Q_i, K_j, "batch B_q d_k, batch B_k d_k -> batch B_q B_k") / math.sqrt(d_k)
+                if is_causal:
+                    query_indices = torch.arange(0, B_q, device=Q.device) + i * B_q
+                    key_indices = torch.arange(0, B_k, device=Q.device) + j * B_k
+                    mask = query_indices[:, None] < key_indices[None, :]
+                    S -= mask[None, ...] * 1e6
                 m = torch.maximum(curr_m, torch.max(S, dim=-1)[0]) # (batch, B_q)
                 P = torch.exp(S - m[..., None]) # (batch, B_q, B_k)
                 l = torch.exp(curr_m - m) * curr_l + torch.sum(P, dim=-1) # (batch, B_q)
@@ -36,11 +41,31 @@ class FlashAttentionPytorch(torch.autograd.Function):
             output[:, (i*B_q):((i+1)*B_q), :] = curr_O / curr_l[..., None]
             L[:, (i*B_q):((i+1)*B_q)] = curr_m + torch.log(curr_l)
         ctx.save_for_backward(L, Q, K, V, output)
+        ctx.is_causal = is_causal
         return output
 
     @staticmethod
     def backward(ctx, grad_out):
-        raise NotImplementedError
+        L, Q, K, V, out = ctx.saved_tensors
+        D = Q.shape[-1]
+        scale = 1 / math.sqrt(D)
+        dtype = grad_out.dtype
+
+        Delta = torch.sum(out * grad_out, dim=-1)
+        S = einsum(Q, K, "batch N_QUERIES D, batch N_KEYS D -> batch N_QUERIES N_KEYS") * scale
+        if ctx.is_causal:
+            query_indices = torch.arange(0, Q.shape[1], device=Q.device)
+            key_indices = torch.arange(0, K.shape[1], device=Q.device)
+            mask = query_indices[:, None] < key_indices[None, :]
+            S -= mask[None, ...] * 1e6
+        P = torch.exp(S - L[..., None])
+        grad_V = einsum(P.to(dtype), grad_out, "batch N_QUERIES N_KEYS, batch N_QUERIES D -> batch N_KEYS D")
+        grad_P = einsum(grad_out, V, "batch N_QUERIES D, batch N_KEYS D -> batch N_QUERIES N_KEYS")
+        grad_S = P * (grad_P - Delta[..., None])
+        grad_Q = einsum(grad_S, K, "batch N_QUERIES N_KEYS, batch N_KEYS D -> batch N_QUERIES D") * scale
+        grad_K = einsum(grad_S, Q, "batch N_QUERIES N_KEYS, batch N_QUERIES D -> batch N_KEYS D") * scale
+        return grad_Q, grad_K, grad_V, None
+
 
 class FlashAttentionTriton(torch.autograd.Function):
     @staticmethod
