@@ -45,8 +45,8 @@ class DDP(nn.Module):
             if p.requires_grad:
                 p.register_post_accumulate_grad_hook(all_reduce_grad)
 
-    def forward(self, ddp_data):
-        return self.module(ddp_data)
+    def forward(self, *inputs, **kwargs):
+        return self.module(*inputs, **kwargs)
 
     def finish_gradient_synchronization(self):
         for handle in self.handles:
